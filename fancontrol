@@ -429,7 +429,6 @@ function UpdateFanSpeeds
 		minso=${AFCMINSTOP[$fcvcount]}
 		minpwm=${AFCMINPWM[$fcvcount]}
 		maxpwm=${AFCMAXPWM[$fcvcount]}
-
 		read tval < ${tsens}
 		if [ $? -ne 0 ]
 		then
@@ -437,13 +436,14 @@ function UpdateFanSpeeds
 			restorefans 1
 		fi
 
+		#smooth read value
 		read pwmpval < ${pwmo}
+		pwmval=`cat ${pwmo}`
 		if [ $? -ne 0 ]
 		then
 			echo "Error reading PWM value from $DIR/$pwmo"
 			restorefans 1
 		fi
-
 		# If fanspeed-sensor output shall be used, do it
 		if [[ -n ${fan} ]]
 		then
@@ -475,7 +475,6 @@ function UpdateFanSpeeds
 		else
 			fanval=1  # set it to a non zero value, so the rest of the script still works
 		fi
-
 		# debug info
 		if [ "$DEBUG" != "" ]
 		then
@@ -493,7 +492,6 @@ function UpdateFanSpeeds
 			echo "fanval=$fanval"
 			echo "min_fanval=$min_fanval"
 		fi
-
 		if (( $tval <= $mint ))
 		  then pwmval=$minpwm # below min temp, use defined min pwm
 		elif (( $tval >= $maxt ))
