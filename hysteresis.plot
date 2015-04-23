@@ -8,7 +8,7 @@ Thyst=5
 
 set xrange [20:100]
 set yrange [0:6500]
-set xlabel "temperature C"
+set xlabel "temperature °C"
 set ylabel "Fan RPM"
 
 a=(MaxRPM-MinRPM)/(Tmax-Tmin)/(Tmax-Tmin)
