@@ -385,6 +385,29 @@ function restorefans()
 trap 'restorefans 0' SIGQUIT SIGTERM
 trap 'restorefans 1' SIGHUP SIGINT
 
+function upperBound
+{
+    # $1: temperature
+    # $2: Tmin
+    # $3: Tmax
+    # $4: MinPWM
+    # $5: MaxPWM
+    # $6 Thyst
+    let a="-($5-$4)*($1-$3+$5)*($1-$3+$5)/($3-$2)/($3-$2)+$5"
+    return $a
+}
+function lowerBound
+{
+    # $1: temperature
+    # $2: Tmin
+    # $3: Tmax
+    # $4: MinPWM
+    # $5: MaxPWM
+    # $6 Thyst
+    let a="($5-$4)*($1-$2)*($1-$2)/($3-$2)/($3-$2)+$4"
+    return $a
+}
+
 # main function
 function UpdateFanSpeeds
 {
@@ -477,7 +500,38 @@ function UpdateFanSpeeds
 		  then pwmval=$maxpwm # over max temp, use defined max pwm
 		else
 		  # calculate the new value from temperature and settings
-		  pwmval="(${tval}-${mint})*(${maxpwm}-${minso})/(${maxt}-${mint})+${minso}"
+		  #pwmval="(${tval}-${mint})*(${maxpwm}-${minso})/(${maxt}-${mint})+${minso}"
+		  #Here is the major change: the new controller has a hysterisis => there are two (quadratic) functions defining an lower and upper bound. If current state is in between those functions the fan speed won't get changed otherwise its changed to the bound it broke.
+		  #The intention is to smooth controlling. The size of the area between lower and upper bound can be adjusted using the new "hysterisis" parameter.
+		  
+		  lowerBound ${tval} ${mint} ${maxt} ${minpwm} ${maxpwm} 5
+		  lb=$?
+		  upperBound ${tval} ${mint} ${maxt} ${minpwm} ${maxpwm} 5
+		  ub=$?
+		 
+		  
+		  if [ "$pwmval" -gt "$ub" ]
+		  then
+                    pwmval=$ub
+		  else 
+                    if [ "$pwmval" -lt "$lb" ]
+                    then
+                        pwmval=$lb
+                    fi
+		  fi
+		  
+		#  echo "Temp:         $tval"
+		#  echo "UpperBound:   $ub"
+                #  echo "LowerBound:   $lb"
+		#  echo "PWMVal:       $pwmval"
+		#  echo "Minsa:		$minsa"
+		#  echo ""
+		  
+		  if [ $pwmval -le $minsa ]
+		  then
+			$pwmval = 0;
+		  fi
+		  
 		  if [ $pwmpval -eq 0 ] || [ $min_fanval -eq 0 ]
 		  then # if fan was stopped start it using a safe value
 		  	echo $minsa > $pwmo
