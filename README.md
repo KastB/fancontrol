@@ -16,4 +16,5 @@ To change parameters and plot it yourself use gnuplot:
 
 ```bash
 gnuplot
-load "hysteresis.plot"```
+load "hysteresis.plot"
+```
