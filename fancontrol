@@ -527,7 +527,7 @@ function UpdateFanSpeeds
 		  
 		  if [ $pwmval -le $minsa ]
 		  then
-			$pwmval = 0;
+			pwmval=0
 		  fi
 		  
 		  if [ $pwmpval -eq 0 ] || [ $min_fanval -eq 0 ]
