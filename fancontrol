@@ -42,6 +42,8 @@ PIDFILE="/var/run/fancontrol.pid"
 
 #DEBUG=1
 MAX=255
+SMOOTHED=-1
+smoothing=5
 
 function LoadConfig
 {
@@ -491,6 +493,8 @@ function UpdateFanSpeeds
 			echo "pwmpval=$pwmpval"
 			echo "fanval=$fanval"
 			echo "min_fanval=$min_fanval"
+			echo ""
+			echo ""
 		fi
 		if (( $tval <= $mint ))
 		  then pwmval=$minpwm # below min temp, use defined min pwm
@@ -517,27 +521,30 @@ function UpdateFanSpeeds
                         pwmval=$lb
                     fi
 		  fi
-		  
+		 fi
 		#  echo "Temp:         $tval"
 		#  echo "UpperBound:   $ub"
                 #  echo "LowerBound:   $lb"
 		#  echo "PWMVal:       $pwmval"
 		#  echo "Minsa:		$minsa"
 		#  echo ""
+		  #start smoothing with current fan speed
+		  if [ $SMOOTHED -eq -1 ]
+		  then
+			let SMOOTHED=$pwmval*1000
+		  fi
 		  
+		  #do smoothing
+		  let SMOOTHED=$SMOOTHED*$smoothing+$pwmval*1000
+		  let tmp=$smoothing+1
+		  let SMOOTHED=$SMOOTHED/$tmp
+		  let pwmval=$SMOOTHED/1000
+	
 		  if [ $pwmval -le $minsa ]
 		  then
 			pwmval=0
 		  fi
-		  
-		  if [ $pwmpval -eq 0 ] || [ $min_fanval -eq 0 ]
-		  then # if fan was stopped start it using a safe value
-		  	echo $minsa > $pwmo
-			# Sleep while still handling signals
-			sleep 1 &
-			wait $!
-		  fi
-		fi
+		
 		echo $pwmval > $pwmo # write new value to pwm output
 		if [ $? -ne 0 ]
 		then
