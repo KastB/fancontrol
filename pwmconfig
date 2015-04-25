@@ -628,6 +628,8 @@ function ClearConfig()
 	MINSTOP=""
 	MINPWM=""
 	MAXPWM=""
+	SMOOTHING=""
+	THYST=""
 }
 
 function LoadConfig()
@@ -653,6 +655,8 @@ function LoadConfig()
 	MINSTOP=`egrep '^MINSTOP=.*$' $1 | sed -e 's/MINSTOP= *//g'`
 	MINPWM=`egrep '^MINPWM=.*$' $1 | sed -e 's/MINPWM= *//g'`
 	MAXPWM=`egrep '^MAXPWM=.*$' $1 | sed -e 's/MAXPWM= *//g'`
+	THYST=`egrep '^THYST=.*$' $1 | sed -e 's/THYST= *//g'`
+	SMOOTHING=`egrep '^SMOOTHING=.*$' $1 | sed -e 's/SMOOTHING= *//g'`
 
 	# Check for configuration change
 	if ! ValidateDevices "$OLD_DEVPATH" "$OLD_DEVNAME"
@@ -815,6 +819,8 @@ function SaveConfig()
 	echo "MINSTOP=$MINSTOP" >>$tmpfile
 	[ -n "$MINPWM" ] && echo "MINPWM=$MINPWM" >>$tmpfile
 	[ -n "$MAXPWM" ] && echo "MAXPWM=$MAXPWM" >>$tmpfile
+	[ -n "$SMOOTHING" ] && echo "SMOOTHING=$SMOOTHING" >>$tmpfile
+	[ -n "$THYST" ] && echo "THYST=$THYST" >>$tmpfile
 	mv $tmpfile $FCCONFIG
 	chmod +r $FCCONFIG
 	#check if file was written correctly
@@ -873,6 +879,10 @@ select pwms in $pwmactive "Change INTERVAL" "Just quit" "Save and quit" "Show co
 			[ -n "$XMINP" ] && echo "  MINPWM=$XMINP"
 			XMAXP=`filter_cfgvar "$MAXPWM" "$pwmo"`
 			[ -n "$XMAXP" ] && echo "  MAXPWM=$XMAXP"
+			XSMOP=`filter_cfgvar "$SMOOTHING" "$pwmo"`
+			[ -n "$XSMOP" ] && echo "  SMOOTHING=$XSMOP"
+			XTHYP=`filter_cfgvar "$THYST" "$pwmo"`
+			[ -n "$XTHYP" ] && echo "  THYST=$XTHYP"
 		done
 		echo
 		break ;;
@@ -1020,6 +1030,34 @@ select pwms in $pwmactive "Change INTERVAL" "Just quit" "Save and quit" "Show co
 					MAXPWM="${pwms}=${XMAXP}"
 				else
 					MAXPWM="`echo $MAXPWM | sed -e "s/${pwmsed}[^ ]* *//g"` ${pwms}=${XMAXP}"
+				fi
+			fi
+			echo
+			echo "Enter the smoothing to be used where"
+			echo "0 means no smoothing"
+			echo "higher values result in more smoothing"
+			read XSMOP
+			if [ -n "$XSMOP" ]
+			then
+				if [ "$SMOOTHING" = "" ]
+				then
+					SMOOTHING="${pwms}=${XSMOP}"
+				else
+					SMOOTHING="`echo $SMOOTHING | sed -e "s/${pwmsed}[^ ]* *//g"` ${pwms}=${XSMOP}"
+				fi
+			fi
+			echo
+			echo "Enter the Hystereses Temperature."
+			echo "This won't affect the quadratic shape of the min and max functions"
+			echo "it will just move the upper temperature curve to the left and the lower to the right"
+			read XTHYP
+			if [ -n "$XTHYP" ]
+			then
+				if [ "$THYST" = "" ]
+				then
+					THYST="${pwms}=${XTHYP}"
+				else
+					THYST="`echo $THYST | sed -e "s/${pwmsed}[^ ]* *//g"` ${pwms}=${XTHYP}"
 				fi
 			fi
 			echo

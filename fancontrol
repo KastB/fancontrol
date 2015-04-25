@@ -43,7 +43,6 @@ PIDFILE="/var/run/fancontrol.pid"
 #DEBUG=1
 MAX=255
 SMOOTHED=-1
-smoothing=5
 
 function LoadConfig
 {
@@ -69,6 +68,8 @@ function LoadConfig
 	FCFANS=`egrep '^FCFANS=.*$' $1 | sed -e 's/FCFANS=//g'`
 	MINPWM=`egrep '^MINPWM=.*$' $1 | sed -e 's/MINPWM=//g'`
 	MAXPWM=`egrep '^MAXPWM=.*$' $1 | sed -e 's/MAXPWM=//g'`
+	THYST=`egrep '^THYST=.*$' $1 | sed -e 's/THYST=//g'`
+	SMOOTHING=`egrep '^SMOOTHING=.*$' $1 | sed -e 's/SMOOTHING=//g'`
 
 	# Check whether all mandatory settings are set
 	if [[ -z ${INTERVAL} || -z ${FCTEMPS} || -z ${MINTEMP} || -z ${MAXTEMP} || -z ${MINSTART} || -z ${MINSTOP} ]]
@@ -109,6 +110,10 @@ function LoadConfig
 		[ -z "${AFCMINPWM[$fcvcount]}" ] && AFCMINPWM[$fcvcount]=0
 		AFCMAXPWM[$fcvcount]=`echo $MAXPWM |sed -e 's/ /\n/g' |egrep "${AFCPWM[$fcvcount]}" |cut -d'=' -f2`
 		[ -z "${AFCMAXPWM[$fcvcount]}" ] && AFCMAXPWM[$fcvcount]=255
+		AFCTHYST[$fcvcount]=`echo $THYST |sed -e 's/ /\n/g' |egrep "${AFCPWM[$fcvcount]}" |cut -d'=' -f2`
+		[ -z "${AFCTHYST[$fcvcount]}" ] && AFCTHYST[$fcvcount]=0
+		AFCSMOOTHING[$fcvcount]=`echo $SMOOTHING |sed -e 's/ /\n/g' |egrep "${AFCPWM[$fcvcount]}" |cut -d'=' -f2`
+		[ -z "${AFCSMOOTHING[$fcvcount]}" ] && AFCSMOOTHING[$fcvcount]=0
 
 		# verify the validity of the settings
 		if [ "${AFCMINTEMP[$fcvcount]}" -ge "${AFCMAXTEMP[$fcvcount]}" ]
@@ -152,6 +157,8 @@ function LoadConfig
 		echo "  MINSTOP=${AFCMINSTOP[$fcvcount]}"
 		echo "  MINPWM=${AFCMINPWM[$fcvcount]}"
 		echo "  MAXPWM=${AFCMAXPWM[$fcvcount]}"
+		echo "  THYST=${AFCTHYST[$fcvcount]}"
+		echo "  SMOOTHING=${AFCSMOOTHING[$fcvcount]}"
 		let fcvcount=fcvcount+1
 	done
 	echo
@@ -414,7 +421,7 @@ function lowerBound
 function UpdateFanSpeeds
 {
 	local fcvcount
-	local pwmo tsens fan mint maxt minsa minso minpwm maxpwm
+	local pwmo tsens fan mint maxt minsa minso minpwm maxpwm tHyst smoothing
 	local tval pwmpval fanval min_fanval one_fan one_fanval
 	local -i pwmval
 
@@ -431,6 +438,8 @@ function UpdateFanSpeeds
 		minso=${AFCMINSTOP[$fcvcount]}
 		minpwm=${AFCMINPWM[$fcvcount]}
 		maxpwm=${AFCMAXPWM[$fcvcount]}
+		smoothing=${AFCSMOOTHING[$fcvcount]}
+		tHyst=${AFCTHYST[$fcvcount]}
 		read tval < ${tsens}
 		if [ $? -ne 0 ]
 		then
@@ -506,9 +515,9 @@ function UpdateFanSpeeds
 		  #Here is the major change: the new controller has a hysterisis => there are two (quadratic) functions defining an lower and upper bound. If current state is in between those functions the fan speed won't get changed otherwise its changed to the bound it broke.
 		  #The intention is to smooth controlling. The size of the area between lower and upper bound can be adjusted using the new "hysterisis" parameter.
 		  
-		  lowerBound ${tval} ${mint} ${maxt} ${minpwm} ${maxpwm} 5
+		  lowerBound ${tval} ${mint} ${maxt} ${minpwm} ${maxpwm} ${tHyst}
 		  lb=$?
-		  upperBound ${tval} ${mint} ${maxt} ${minpwm} ${maxpwm} 5
+		  upperBound ${tval} ${mint} ${maxt} ${minpwm} ${maxpwm} ${tHyst}
 		  ub=$?
 		 
 		  
