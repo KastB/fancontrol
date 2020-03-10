@@ -68,6 +68,7 @@ function LoadConfig
 	FCFANS=$(grep -E '^FCFANS=.*$' $1 | sed -e 's/FCFANS=//g')
 	MINPWM=$(grep -E '^MINPWM=.*$' $1 | sed -e 's/MINPWM=//g')
 	MAXPWM=$(grep -E '^MAXPWM=.*$' $1 | sed -e 's/MAXPWM=//g')
+	INVPWM=$(grep -E '^INVPWM=.*$' $1 | sed -e 's/INVPWM=//g')
 	THYST=$(grep -E '^THYST=.*$' $1 | sed -e 's/THYST=//g')
 	SMOOTHING=$(grep -E '^SMOOTHING=.*$' $1 | sed -e 's/SMOOTHING=//g')
 
@@ -110,6 +111,8 @@ function LoadConfig
 		[ -z "${AFCMINPWM[$fcvcount]}" ] && AFCMINPWM[$fcvcount]=0
 		AFCMAXPWM[$fcvcount]=$(echo $MAXPWM |sed -e 's/ /\n/g' |grep -E "${AFCPWM[$fcvcount]}" |cut -d'=' -f2)
 		[ -z "${AFCMAXPWM[$fcvcount]}" ] && AFCMAXPWM[$fcvcount]=255
+		AFCINVPWM[$fcvcount]=$(echo $INVPWM |sed -e 's/ /\n/g' |grep -E "${AFCPWM[$fcvcount]}" |cut -d'=' -f2)
+		[ -z "${AFCINVPWM[$fcvcount]}" ] && AFCINVPWM[$fcvcount]=0
 		AFCTHYST[$fcvcount]=$(echo $THYST |sed -e 's/ /\n/g' |grep -E "${AFCPWM[$fcvcount]}" |cut -d'=' -f2)
 		[ -z "${AFCTHYST[$fcvcount]}" ] && AFCTHYST[$fcvcount]=0
 		AFCSMOOTHING[$fcvcount]=$(echo $SMOOTHING |sed -e 's/ /\n/g' |grep -E "${AFCPWM[$fcvcount]}" |cut -d'=' -f2)
@@ -157,6 +160,7 @@ function LoadConfig
 		echo "  MINSTOP=${AFCMINSTOP[$fcvcount]}"
 		echo "  MINPWM=${AFCMINPWM[$fcvcount]}"
 		echo "  MAXPWM=${AFCMAXPWM[$fcvcount]}"
+		echo "  INVPWM=${AFCINVPWM[$fcvcount]}"
 		echo "  THYST=${AFCTHYST[$fcvcount]}"
 		echo "  SMOOTHING=${AFCSMOOTHING[$fcvcount]}"
 		let fcvcount=fcvcount+1
@@ -543,7 +547,7 @@ function UpdateFanSpeeds
 {
 	local fcvcount
 	local pwmo tsens fan mint maxt minsa minso minpwm maxpwm tHyst smoothing
-	local tval pwmpval fanval min_fanval one_fan one_fanval
+	local tval pwmpval fanval min_fanval one_fan one_fanval invpwm
 	local -i pwmval
 
 	let fcvcount=0
@@ -559,6 +563,7 @@ function UpdateFanSpeeds
 		minso=${AFCMINSTOP[$fcvcount]}
 		minpwm=${AFCMINPWM[$fcvcount]}
 		maxpwm=${AFCMAXPWM[$fcvcount]}
+		invpwm=${AFCINVPWM[$fcvcount]}
 		smoothing=${AFCSMOOTHING[$fcvcount]}
 		tHyst=${AFCTHYST[$fcvcount]}
 		read tval < ${tsens}
@@ -576,6 +581,7 @@ function UpdateFanSpeeds
 			echo "Error reading PWM value from $DIR/$pwmo"
 			restorefans 1
 		fi
+		[ $invpwm -eq 1 ] && pwmpval=$((255 - $pwmpval))
 		# If fanspeed-sensor output shall be used, do it
 		if [[ -n ${fan} ]]
 		then
@@ -620,6 +626,7 @@ function UpdateFanSpeeds
 			echo "minso=$minso"
 			echo "minpwm=$minpwm"
 			echo "maxpwm=$maxpwm"
+			echo "invpwm=$invpwm"
 			echo "tval=$tval"
 			echo "pwmpval=$pwmpval"
 			echo "fanval=$fanval"
@@ -674,14 +681,22 @@ function UpdateFanSpeeds
 		fi
 
 		if [ $pwmpval -eq 0 -o $min_fanval -eq 0 ] && [ $pwmval -ne 0 ]
-		then # if fan was stopped start it using a safe value
-			echo $minsa > $pwmo
+		then # if fan was stopped start it using a(n inverted) safe value
+			if [ $invpwm -eq 1 ]
+			  then echo "$((255 - $minsa))" > $pwmo
+			else
+			  echo $minsa > $pwmo
+			fi
 			# Sleep while still handling signals
 			sleep 1 &
 			wait
 		fi
 		
-		echo $pwmval > $pwmo # write new value to pwm output
+		if [ $invpwm -eq 1 ]
+		  then echo "$((255 - $pwmval))" > $pwmo # write inverted new value to pwm output
+		else
+		  echo $pwmval > $pwmo # write new value to pwm output
+		fi
 		if [ $? -ne 0 ]
 		then
 			echo "Error writing PWM value to $DIR/$pwmo" >&2
