@@ -62,6 +62,9 @@ function LoadConfig
 	FCTEMPS=$(grep -E '^FCTEMPS=.*$' $1 | sed -e 's/FCTEMPS=//g')
 	MINTEMP=$(grep -E '^MINTEMP=.*$' $1 | sed -e 's/MINTEMP=//g')
 	MAXTEMP=$(grep -E '^MAXTEMP=.*$' $1 | sed -e 's/MAXTEMP=//g')
+	FCAUXTEMPS=$(grep -E '^FCAUXTEMPS=.*$' $1 | sed -e 's/FCAUXTEMPS=//g')
+	AUXMINTEMP=$(grep -E '^AUXMINTEMP=.*$' $1 | sed -e 's/AUXMINTEMP=//g')
+	AUXMAXTEMP=$(grep -E '^AUXMAXTEMP=.*$' $1 | sed -e 's/AUXMAXTEMP=//g')
 	MINSTART=$(grep -E '^MINSTART=.*$' $1 | sed -e 's/MINSTART=//g')
 	MINSTOP=$(grep -E '^MINSTOP=.*$' $1 | sed -e 's/MINSTOP=//g')
 	# optional settings:
@@ -111,6 +114,11 @@ function LoadConfig
 		[ -z "${AFCMINPWM[$fcvcount]}" ] && AFCMINPWM[$fcvcount]=0
 		AFCMAXPWM[$fcvcount]=$(echo $MAXPWM |sed -e 's/ /\n/g' |grep -E "${AFCPWM[$fcvcount]}" |cut -d'=' -f2)
 		[ -z "${AFCMAXPWM[$fcvcount]}" ] && AFCMAXPWM[$fcvcount]=255
+		AFCAUXTEMP[$fcvcount]=$(echo $FCAUXTEMPS |sed -e 's/ /\n/g' |grep -E "${AFCPWM[$fcvcount]}" |cut -d'=' -f2)
+		AFCAUXMINTEMP[$fcvcount]=$(echo $AUXMINTEMP |sed -e 's/ /\n/g' |grep -E "${AFCPWM[$fcvcount]}" |cut -d'=' -f2)
+		[ -z "${AFCAUXMINTEMP[$fcvcount]}" ] && AFCAUXMINTEMP[$fcvcount]=0
+		AFCAUXMAXTEMP[$fcvcount]=$(echo $AUXMAXTEMP |sed -e 's/ /\n/g' |grep -E "${AFCPWM[$fcvcount]}" |cut -d'=' -f2)
+		[ -z "${AFCAUXMAXTEMP[$fcvcount]}" ] && AFCAUXMAXTEMP[$fcvcount]=0
 		AFCINVPWM[$fcvcount]=$(echo $INVPWM |sed -e 's/ /\n/g' |grep -E "${AFCPWM[$fcvcount]}" |cut -d'=' -f2)
 		[ -z "${AFCINVPWM[$fcvcount]}" ] && AFCINVPWM[$fcvcount]=0
 		AFCTHYST[$fcvcount]=$(echo $THYST |sed -e 's/ /\n/g' |grep -E "${AFCPWM[$fcvcount]}" |cut -d'=' -f2)
@@ -150,12 +158,27 @@ function LoadConfig
 			exit 1
 		fi
 
+		if [  ! -z "${AFCAUXTEMP[$fcvcount]// }" ]
+		then
+			if [ "${AFCAUXMINTEMP[$fcvcount]}" -ge "${AFCAUXMAXTEMP[$fcvcount]}" ]
+			then
+				echo "Error in configuration file (${AFCPWM[$fcvcount]}):" >&2
+				echo "AUXMINTEMP must be less than AUXMAXTEMP" >&2
+				exit 1
+			fi
+		fi
+
 		echo
 		echo "Settings for ${AFCPWM[$fcvcount]}:"
 		echo "  Depends on ${AFCTEMP[$fcvcount]}"
+		if [ ! -z ${AFCAUXTEMP[$fcvcount]// } ]
+		  then echo "  and for AUXILIARY ${AFCAUXTEMP[$fcvcount]}"
+		fi
 		echo "  Controls ${AFCFAN[$fcvcount]}"
 		echo "  MINTEMP=${AFCMINTEMP[$fcvcount]}"
 		echo "  MAXTEMP=${AFCMAXTEMP[$fcvcount]}"
+		echo "  AUXMINTEMP=${AFCAUXMINTEMP[$fcvcount]}"
+		echo "  AUXMAXTEMP=${AFCAUXMAXTEMP[$fcvcount]}"
 		echo "  MINSTART=${AFCMINSTART[$fcvcount]}"
 		echo "  MINSTOP=${AFCMINSTOP[$fcvcount]}"
 		echo "  MINPWM=${AFCMINPWM[$fcvcount]}"
@@ -249,6 +272,18 @@ function FixupDeviceFiles
 	done
 
 	let fcvcount=0
+	while (( $fcvcount < ${#AFCAUXTEMP[@]} )) # go through all temp inputs
+	do
+		tsen=${AFCAUXTEMP[$fcvcount]}
+		AFCAUXTEMP[$fcvcount]=${tsen//$DEVICE\/device/$DEVICE}
+		if [ "${AFCAUXTEMP[$fcvcount]}" != "$tsen" ]
+		then
+			echo "Adjusing $tsen -> ${AFCAUXTEMP[$fcvcount]}"
+		fi
+		let fcvcount=$fcvcount+1
+	done
+
+	let fcvcount=0
 	while (( $fcvcount < ${#AFCFAN[@]} )) # go through all fan inputs
 	do
 		fan=${AFCFAN[$fcvcount]}
@@ -299,6 +334,18 @@ function CheckFiles
 	while (( $fcvcount < ${#AFCTEMP[@]} )) # go through all temp inputs
 	do
 		tsen=${AFCTEMP[$fcvcount]}
+		if [ ! -r $tsen ]
+		then
+			echo "Error: file $tsen doesn't exist" >&2
+			outdated=1
+		fi
+		let fcvcount=$fcvcount+1
+	done
+
+	let fcvcount=0
+	while (( $fcvcount < ${#AFCAUXTEMP[@]} )) # go through all temp inputs
+	do
+		tsen=${AFCAUXTEMP[$fcvcount]}
 		if [ ! -r $tsen ]
 		then
 			echo "Error: file $tsen doesn't exist" >&2
@@ -521,17 +568,19 @@ trap 'restorefans 1' SIGHUP SIGINT
 
 function upperBound
 {
+	local -i a
 	# $1: temperature
 	# $2: Tmin
 	# $3: Tmax
 	# $4: MinPWM
 	# $5: MaxPWM
 	# $6 Thyst
-	let a="-($5-$4)*($1-$3+$6)*($1-$3+$6)/($3-$2)/($3-$2)+$5"
+	let a="-($5-$4)*(($1-$3+$6)*($1-$3+$6))/($3-$2)/($3-$2)+$5"
 	return $a
 }
 function lowerBound
 {
+	local -i a
 	# $1: temperature
 	# $2: Tmin
 	# $3: Tmax
@@ -546,9 +595,9 @@ function lowerBound
 function UpdateFanSpeeds
 {
 	local fcvcount
-	local pwmo tsens fan mint maxt minsa minso minpwm maxpwm tHyst smoothing
-	local tval pwmpval fanval min_fanval one_fan one_fanval invpwm
-	local -i pwmval
+	local pwmo tsens auxtsens one_fan one_fanval fan
+	local -i mint maxt minsa minso minpwm maxpwm tHyst smoothing invpwm
+	local -i pwmval lb ub auxlb auxub tval auxtval pwmpval fanval min_fanval
 
 	let fcvcount=0
 	while (( $fcvcount < ${#AFCPWM[@]} )) # go through all pwm outputs
@@ -556,9 +605,12 @@ function UpdateFanSpeeds
 		#hopefully shorter vars will improve readability:
 		pwmo=${AFCPWM[$fcvcount]}
 		tsens=${AFCTEMP[$fcvcount]}
+		auxtsens=${AFCAUXTEMP[$fcvcount]// }
 		fan=${AFCFAN[$fcvcount]}
 		let mint="${AFCMINTEMP[$fcvcount]}*1000"
 		let maxt="${AFCMAXTEMP[$fcvcount]}*1000"
+		let auxmint="${AFCAUXMINTEMP[$fcvcount]}*1000"
+		let auxmaxt="${AFCAUXMAXTEMP[$fcvcount]}*1000"
 		minsa=${AFCMINSTART[$fcvcount]}
 		minso=${AFCMINSTOP[$fcvcount]}
 		minpwm=${AFCMINPWM[$fcvcount]}
@@ -566,11 +618,24 @@ function UpdateFanSpeeds
 		invpwm=${AFCINVPWM[$fcvcount]}
 		smoothing=${AFCSMOOTHING[$fcvcount]}
 		tHyst=${AFCTHYST[$fcvcount]}
+
 		read tval < ${tsens}
 		if [ $? -ne 0 ]
 		then
 			echo "Error reading temperature from $DIR/$tsens"
 			restorefans 1
+		fi
+		if [ ! -z ${auxtsens// } ]
+		then
+			read auxtval < ${auxtsens}
+			if [ $? -ne 0 ]
+			then
+				echo "Error reading AUXILIARY temperature from $DIR/$auxtsens"
+				restorefans 1
+			fi
+			let auxtval="$auxtval"
+		else
+			auxtval=0
 		fi
 
 		#smooth read value
@@ -622,38 +687,62 @@ function UpdateFanSpeeds
 			echo "fan=$fan"
 			echo "mint=$mint"
 			echo "maxt=$maxt"
+			echo "auxmint=$auxmint"
+			echo "auxmaxt=$auxmaxt"
 			echo "minsa=$minsa"
 			echo "minso=$minso"
 			echo "minpwm=$minpwm"
 			echo "maxpwm=$maxpwm"
 			echo "invpwm=$invpwm"
 			echo "tval=$tval"
+			echo "auxtval=$auxtval"
 			echo "pwmpval=$pwmpval"
 			echo "fanval=$fanval"
 			echo "min_fanval=$min_fanval"
 		fi
 
-		if (( $tval <= $mint ))
+		if (( $tval <= $mint )) && (( $auxtval <= $auxmint ))
 		  then pwmval=$minpwm # below min temp, use defined min pwm
-		elif (( $tval >= $maxt ))
+		elif (( $tval >= $maxt )) || (( $auxtval >= $auxmaxt ))
 		  then pwmval=$maxpwm # over max temp, use defined max pwm
 		else
 		  # calculate the new value from temperature and settings
 		  #pwmval="(${tval}-${mint})*(${maxpwm}-${minso})/(${maxt}-${mint})+${minso}"
 		  #Here is the major change: the new controller has a hysterisis => there are two (quadratic) functions defining an lower and upper bound. If current state is in between those functions the fan speed won't get changed otherwise its changed to the bound it broke.
 		  #The intention is to smooth controlling. The size of the area between lower and upper bound can be adjusted using the new "hysterisis" parameter.
-		  
+
 		  lowerBound ${tval} ${mint} ${maxt} ${minpwm} ${maxpwm} ${tHyst}
 		  lb=$?
 		  upperBound ${tval} ${mint} ${maxt} ${minpwm} ${maxpwm} ${tHyst}
 		  ub=$?
+
+		  # Don't uselessly perform the calulation for the common case of no AUXILIARY sensor
+		  if [ $auxtval -gt 0 ]
+		  then
+		    lowerBound ${auxtval} ${auxmint} ${auxmaxt} ${minpwm} ${maxpwm} ${tHyst}
+		    auxlb=$?
+		    upperBound ${auxtval} ${auxmint} ${auxmaxt} ${minpwm} ${maxpwm} ${tHyst}
+		    auxub=$?
+		  else
+		    auxlb=0
+		    auxub=0
+		  fi
 		 
-		  
-		  if [ "$pwmpval" -gt "$ub" ]
-		    then pwmval=$ub
+		  if [ "$pwmpval" -gt "$ub" ] && [ "$pwmpval" -gt "$auxub" ]
+		  then
+		    if [ $auxub -gt $ub ]
+		      then  pwmval=$auxub
+		    else
+		      pwmval=$ub
+		    fi
 		  else 
-                    if [ "$pwmpval" -lt "$lb" ]
-                      then pwmval=$lb
+                    if [ "$pwmpval" -lt "$lb" ] || [ "$pwmpval" -lt "$auxlb" ]
+                    then
+                      if [ $auxlb -gt $lb ]
+                        then pwmval=$auxlb
+                      else
+                        pwmval=$lb
+                      fi
 		    else
 		      pwmval=$pwmpval
                     fi
@@ -662,6 +751,9 @@ function UpdateFanSpeeds
 		#  echo "Temp:         $tval"
 		#  echo "UpperBound:   $ub"
 		#  echo "LowerBound:   $lb"
+		#  echo "AUXTemp:         $auxtval"
+		#  echo "AUXUpperBound:   $auxub"
+		#  echo "AUXLowerBound:   $auxlb"
 		#  echo "PWMVal:       $pwmval"
 		#  echo "Minsa:		$minsa"
 		#  echo ""
